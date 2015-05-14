@@ -58,16 +58,16 @@ SynthDef(\dirt_vowel, { |out, cutoff, resonance|
 	var signal = In.ar(out, ~numChannels);
 	var freq = \freq.kr(440);
 	var formfreqs = \formfreqs.kr([500, 772, 1002]);
-	DetectSilence.ar(signal, doneAction:2);
 	signal = Formlet.ar(signal, freq, 1/formfreqs); // not sure how to use cutoff and resonance.
+	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
 	ReplaceOut.ar(out, signal)
 }).add;
 
 SynthDef(\dirt_crush, { |out, cutoff, resonance|
 	var signal = In.ar(out, ~numChannels);
 	var bitsize = 4;
-	DetectSilence.ar(signal, doneAction:2);
 	signal = signal.round(0.5 ** bitsize);
+	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
 	ReplaceOut.ar(out, signal)
 }).add;
 
