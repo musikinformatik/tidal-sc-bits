@@ -19,7 +19,7 @@ var folderPaths = pathMatch(path +/+ "**");
 folderPaths.do { |folderPath|
 	PathName(folderPath).filesDo { |filepath|
 		var buf, name;
-		if(filepath.extension == "wav") {
+		if(filepath.extension == "wav" or: { filepath.extension == "WAV" }) {
 			buf = Buffer.read(s, filepath.fullPath);
 			name = filepath.folderName;
 			~buffers[name.asSymbol] = ~buffers[name.asSymbol].add(buf)
@@ -32,7 +32,7 @@ folderPaths.do { |folderPath|
 // test buffers
 ~buffers.choose.play;
 ~buffers.keys;
-~buffers['cp'][1].play
+~buffers['CY'][1].play
 
 
 
@@ -174,7 +174,7 @@ OSCdef(\dirt, { |msg|
 (
 Tdef(\x, {
 	loop {
-		~dirt.(1, 'cp:10', 0, 0.1.rand, 1.0.rand, 1 + 1.3.rand2, 2.rand2, accelerate:1);
+		~dirt.(1, 'CY:10', 0, 0.1.rand, 1.0.rand, 1 + 1.3.rand2, 2.rand2, accelerate:0);
 		(0.2 * [1, 2, 1/3]).choose.wait;
 	}
 }).play;
@@ -183,7 +183,7 @@ Tdef(\x, {
 (
 Tdef(\x, {
 	loop {
-		~dirt.(1, 'cp:10', 0, 0.1.rand, 1.0.rand, 1 + 1.3.rand2, 2.rand2, accelerate:1, crush:1);
+		~dirt.(1, 'CY:10', 0, 0.1.rand, 1.0.rand, 1 + 1.3.rand2, 2.rand2, accelerate:1, crush:1);
 		(0.2 * [1, 2, 1/3]).choose.wait;
 	}
 }).play;
