@@ -128,12 +128,19 @@ The following effect synths are freed when input is silent for longer than 0.1 s
 // these are just placeholders, not sure how they are best translated
 
 // we need to select formant bands for the vowels in sclang (at least this would be the most efficient)
-SynthDef(\dirt_vowel, { |out, cutoff, resonance|
+SynthDef(\dirt_vowel, { |out, cutoff = 440, resonance = 0.5, vowel|
 	var signal = In.ar(out, ~numChannels);
-	var freq = \freq.kr(440);
-	var formfreqs = \formfreqs.kr([500, 772, 1002]);
-	signal = Formlet.ar(signal, freq, 1/formfreqs); // not sure how to use cutoff and resonance.
-	DetectSilence.ar(LeakDC.ar(signal), time:0.1, doneAction:2);
+	var freq = cutoff.linexp(0, 1, 200, 500); // adjust this and the vowel freqencies
+	var vowelFreqs = Select.kr(vowel, [
+		[800, 1150, 2800, 3500, 4950],
+		[400, 1600, 2700, 3300, 4950],
+		[350, 1700, 2700, 3700, 4950],
+		[450, 800, 2830, 3500, 4950],
+		[325, 700, 2530, 3500, 4950]
+	]);
+	signal = Formlet.ar(signal, (cutoff / 440) * vowelFreqs, 1/resonance); // not sure how to use this here.
+	signal = signal.sum; // sum all filters
+	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
 	ReplaceOut.ar(out, signal)
 }).add;
 
@@ -193,7 +200,7 @@ Functions for sending synths to the server.
 
 ~dirt = {
 	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0,
-	velocity, vowel, cutoff, resonance,
+	velocity, vowel, cutoff = 300, resonance = 0.5,
 	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay = 0, delaytime = 0, delayfeedback = 0,
 	crush = 0, coarse = 0, hcutoff = 0, hresonance = 0, bandqf = 0, bandq = 0, unit = \r|
 
@@ -241,10 +248,11 @@ Functions for sending synths to the server.
 			);
 
 			if(vowel.notNil) {
-
+				vowel = [\a, \e, \i, \o, \u].indexOf(vowel); // convert to number
 				~sendSynth.(\dirt_vowel,
 					[
 						out: ~bus.index,
+						vowel: vowel,
 						cutoff: cutoff,
 						resonance: resonance
 					]
@@ -359,6 +367,8 @@ Tdef(\x, {
 ~dirt.(1, 'CY:10', speed: 1, hcutoff: 3000, hresonance: 10);
 ~dirt.(1, 'CY:10', speed: 1, bandqf: 3000, bandq: 100);
 ~dirt.(1, 'CY:10', speed: 1, bandqf: 3000, bandq: 100, crush: 4);
+~dirt.(1, 'CY:10', speed: 1, vowel: \a);
+~dirt.(1, 'CY:10', speed: 1, vowel: \i, resonance: 1.4);
 
 
 // test delay:
