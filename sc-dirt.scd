@@ -1,10 +1,11 @@
 (
 s.options.numBuffers = 1024 * 16;
-~numCutGroups = 16;
 ~numChannels = 2;
 
 s.tree = {
-	~cutGroups = 16.collect { |i| Group(s) };
+	/*
+	we use one private bus, so we can use the public one for mixing everything together (see the "dirt_monitor" synth def)
+	*/
 	~bus = Bus.audio(s, ~numChannels);
 };
 s.reboot;
@@ -29,29 +30,50 @@ folderPaths.do { |folderPath|
 
 )
 
+
+
 // test buffers
-~buffers.choose.play;
 ~buffers.keys;
 ~buffers['CY'][1].play
 
-
-
 // init sc-dirt
 (
+/*
+in order to avoid bookkeeping on the language side, we implement cutgroups like this.
+The language initialises the synth with its sample id (some number that correlates with the sample name) and the cutgroup. Before we start the new synth, we send a /set message to all synths, and those that match the specifics will be released.
+*/
 
+~gateCutGroup = {
+	var same = { |a, b| BinaryOpUGen('==', a, b) };
+	var sameCutGroup = same.(\cutGroup.kr(0), abs(\gateCutGroup.kr(0)));
+	var which = \gateCutGroup.kr(0).sign; // -1, 0, 1
+	var free = Select.kr(which + 1, // 0, 1, 2
+		[
+			same.(\sample.kr(0), \gateSample.kr(0)),
+			0.0, // default cut group 0 doesn't ever cut
+			1.0
+		]
+	) * sameCutGroup; // same group is mandatory
 
-SynthDef(\dirt, { |out, speed = 1, bufnum, start, end, pan, accelerate, amp = 0.1, offset, doneAction=2|
+	EnvGen.kr(Env.asr(0, 1, 0.01), 1 - free, doneAction:2);
+};
+
+SynthDef(\dirt, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp = 0.1, offset, doneAction=2|
 	var env, sound, numFrames, startFrame, dur;
 	numFrames = BufDur.kr(bufnum);
 	dur = numFrames * (end - start) / speed; // todo: account for accelerate
 	startFrame = start * BufFrames.kr(bufnum) + (offset * BufSampleRate.kr(bufnum));
 	env = EnvGen.ar(Env.linen(0, dur, 0.001, amp, -4), doneAction:doneAction);
 	sound = PlayBuf.ar(1, bufnum, speed + Sweep.kr(1, accelerate) * BufRateScale.kr(bufnum), 0, startFrame);
+	env = env * ~gateCutGroup.value; // this synth can be freed by cutgroup mechanism
 	OffsetOut.ar(out,
 		PanAz.ar(~numChannels, sound, pan, env)
 	);
 }).add;
 
+/*
+The following effect synths are freed when input is silent for longer than 0.1 sec. This makes it unnecessary to keep track of any synths. But this may cause problems with samples that contain silence. One way to solve this involves bookkeeping of synths on the language side (haskell or sclang). For now, we use the simplest possible way.
+*/
 
 // this is just a placeholder, not sure how it is best translated
 SynthDef(\dirt_vowel, { |out, cutoff, resonance|
@@ -59,7 +81,7 @@ SynthDef(\dirt_vowel, { |out, cutoff, resonance|
 	var freq = \freq.kr(440);
 	var formfreqs = \formfreqs.kr([500, 772, 1002]);
 	signal = Formlet.ar(signal, freq, 1/formfreqs); // not sure how to use cutoff and resonance.
-	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
+	DetectSilence.ar(LeakDC.ar(signal), time:0.1, doneAction:2);
 	ReplaceOut.ar(out, signal)
 }).add;
 
@@ -87,73 +109,71 @@ SynthDef(\dirt_monitor, { |out, in|
 
 	var amp, allbufs, bufnum, group;
 	var key, index, instrument = \dirt;
-	var synths;
+	var sample;
+
 	#key, index = name.asString.split($:);
 	allbufs = ~buffers[key.asSymbol];
+
 	if(allbufs.notNil) {
 		index = (index ? 0).asInteger;
 		bufnum = allbufs.wrapAt(index);
 		amp = pow(gain / 2, 4);
 		speed = speed * cps;
-		group = ~cutGroups.clipAt(cutgroup);
+		sample = name.identityHash;
 
 		s.bind {
-
 			if(cutgroup != 0) {
-				if(cutgroup > 0) {
-					~cutGroups.clipAt(cutgroup).set(\gate, 0)
-				} {
-					// negative not yet implemented, would need to keep track of each synth.
-				}
+				// set group 1, in which all synths are living
+				s.sendMsg(\n_set, 1, \gateCutGroup, cutgroup, \gateSample, sample);
 			};
 
-			synths = synths.add(
-				Synth(instrument,
-					[
-						speed: speed,
-						bufnum: bufnum,
-						start: start,
-						end: end,
-						pan: pan,
-						accelerate: accelerate,
-						amp: amp,
-						offset: offset,
-						out: ~bus],
-					group,
-					\addToTail
-				);
+			Synth(instrument,
+				[
+					speed: speed,
+					bufnum: bufnum,
+					start: start,
+					end: end,
+					pan: pan,
+					accelerate: accelerate,
+					amp: amp,
+					offset: offset,
+					cutGroup: cutgroup.abs, // ignore negatives here!
+					sample: sample,
+					out: ~bus],
+				group,
+				\addToTail
 			);
+
 			if(vowel.notNil) {
-				synths = synths.add(
-					Synth(\dirt_vowel,
-						[
-							out: ~bus,
-							cutoff: cutoff,
-							resonance: resonance],
-						group,
-						\addToTail
-					);
-				);
-			};
-			if(crush.notNil) {
-				synths = synths.add(
-					Synth(\dirt_crush,
-						[
-							out: ~bus
-						],
-						group,
-						\addToTail
-					);
-				);
-			};
 
-			synths = synths.add(
-				Synth(\dirt_monitor,
-					[in: ~bus, out: 0],
+				Synth(\dirt_vowel,
+					[
+						out: ~bus,
+						cutoff: cutoff,
+						resonance: resonance],
 					group,
 					\addToTail
 				);
+
+			};
+
+			if(crush.notNil) {
+				Synth(\dirt_crush,
+					[
+						out: ~bus
+					],
+					group,
+					\addToTail
+				);
+			};
+
+
+			Synth(\dirt_monitor,
+				[in: ~bus, out: 0],
+				group,
+				\addToTail
 			);
+
 
 		};
 
@@ -188,5 +208,24 @@ Tdef(\x, {
 	}
 }).play;
 )
+
+// cutgroup tests
+~dirt.(1, 'CY:10', speed: 0.02, cutgroup: -8); // really slow, to keep it on
+~dirt.(1, 'CY:10', speed: 0.02, cutgroup: -8); // cut the old one
+~dirt.(1, 'CY:10', speed: 0.02, cutgroup: -8); // ... again
+
+
+//  With negative, only stop the same sample from playing in the same cutgroup
+~dirt.(1, 'CY:9', speed: 0.02, cutgroup: -8); // a different sample, is added
+~dirt.(1, 'CY:9', speed: 0.02, cutgroup: -8); // the same sample, frees
+
+//  with positive integers, stop samples playing that are in the same cutgroup.
+~dirt.(1, 'CY:10', speed: 0.02, cutgroup: 8); // should free all others
+
+
+
+
+
+
 
 
