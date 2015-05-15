@@ -199,10 +199,15 @@ Functions for sending synths to the server.
 
 
 ~dirt = {
-	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0,
-	velocity, vowel, cutoff = 300, resonance = 0.5,
-	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay = 0, delaytime = 0, delayfeedback = 0,
-	crush = 0, coarse = 0, hcutoff = 0, hresonance = 0, bandqf = 0, bandq = 0, unit = \r|
+	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0, velocity,
+	vowel, cutoff = 300, resonance = 0.5,
+	accelerate = 0, shape, krio, gain = 2, cutgroup = 0,
+	delay = 0, delaytime = 0, delayfeedback = 0,
+	crush = 0,
+	coarse = 0,
+	hcutoff = 0, hresonance = 0,
+	bandqf = 0, bandq = 0,
+	unit = \r|
 
 	var amp, allbufs, buffer, group;
 	var key, index, instrument = \dirt;
