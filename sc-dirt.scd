@@ -73,13 +73,48 @@ The language initialises the synth with its sample id (some number that correlat
 	EnvGen.kr(Env.asr(0, 1, 0.01), 1 - free, doneAction:2);
 };
 
-SynthDef(\dirt, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp = 0.1, offset, doneAction=2|
-	var env, sound, numFrames, startFrame, dur;
-	numFrames = BufDur.kr(bufnum);
-	dur = numFrames * (end - start) / speed; // todo: account for accelerate
-	startFrame = start * BufFrames.kr(bufnum) + (offset * BufSampleRate.kr(bufnum));
+SynthDef(\dirt, { |out, bufnum, start=0, end=1, pan, amp = 0.1,
+	speed = 1, accelerate, offset, cps, unit, doneAction=2|
+
+	var env, sound, dur, length, rate;
+	var sampleFrames, sampleDur, startFrame, sampleSampleRate;
+
+	length = end - start;
+	sampleDur = BufDur.kr(bufnum);
+	sampleFrames = BufFrames.kr(bufnum);
+	sampleSampleRate = BufSampleRate.kr(bufnum);
+
+	// need to check these carefully
+	// todo: account for accelerate
+	rate = Select.kr(unit, [
+		speed,
+		cps * speed / sampleDur,
+		speed / cps
+	]);
+
+	// if we accelerate, do we get shorter?
+	dur = Select.kr(unit, [
+		sampleDur * length,
+		length / cps,
+		length
+	]) / rate;
+
+	startFrame = Select.kr(unit, [
+		sampleFrames * start,
+		sampleSampleRate / cps * start,
+		sampleSampleRate * start
+	]);
+
+	rate = rate + Sweep.kr(1, accelerate); // maybe this needs to be moved up?
+
 	env = EnvGen.ar(Env.linen(0, dur, 0.001, amp, -4), doneAction:doneAction);
-	sound = PlayBuf.ar(1, bufnum, speed + Sweep.kr(1, accelerate) * BufRateScale.kr(bufnum), 0, startFrame);
+	sound = PlayBuf.ar(1,
+		bufnum,
+		// bufratescale adjusts the rate if sample doesn't have the same rate as soundcard
+		rate * BufRateScale.kr(bufnum),
+		0,
+		startFrame
+	);
 	env = env * ~gateCutGroup.value; // this synth can be freed by cutgroup mechanism
 	OffsetOut.ar(out,
 		PanAz.ar(~numChannels, sound, pan, env)
@@ -148,9 +183,9 @@ Functions for sending synths to the server.
 
 ~sendSynth = { |instrument, args|
 	s.sendMsg(\s_new, instrument,
-				-1, // no id
-				1, // add action: addToTail
-				1, // send to group 1
+		-1, // no id
+		1, // add action: addToTail
+		1, // send to group 1
 		*args // append all other args
 	)
 };
@@ -160,7 +195,7 @@ Functions for sending synths to the server.
 	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0,
 	velocity, vowel, cutoff, resonance,
 	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay = 0, delaytime = 0, delayfeedback = 0,
-	crush = 0, coarse = 0, hcutoff = 0, hresonance = 0, bandqf = 0, bandq = 0, unit|
+	crush = 0, coarse = 0, hcutoff = 0, hresonance = 0, bandqf = 0, bandq = 0, unit = \r|
 
 	var amp, allbufs, buffer, group;
 	var key, index, instrument = \dirt;
@@ -176,6 +211,7 @@ Functions for sending synths to the server.
 		amp = pow(gain / 2, 4);
 		speed = speed * cps;
 		sample = name.identityHash;
+		unit = #[\r, \c, \s].indexOf(unit) ? 0;
 
 		s.bind { // use this to build a bundle
 
@@ -190,17 +226,18 @@ Functions for sending synths to the server.
 			};
 
 			~sendSynth.(instrument, [
-					speed: speed,
-					bufnum: buffer.bufnum,
-					start: start,
-					end: end,
-					pan: pan,
-					accelerate: accelerate,
-					amp: amp,
-					offset: offset,
-					cutGroup: cutgroup.abs, // ignore negatives here!
-					sample: sample,
-					out: ~bus.index]
+				speed: speed,
+				bufnum: buffer.bufnum,
+				start: start,
+				end: end,
+				pan: pan,
+				accelerate: accelerate,
+				amp: amp,
+				offset: offset,
+				cutGroup: cutgroup.abs, // ignore negatives here!
+				sample: sample,
+				cps: cps,
+				out: ~bus.index]
 			);
 
 			if(vowel.notNil) {
@@ -258,15 +295,16 @@ Functions for sending synths to the server.
 		if(SynthDescLib.at(key).notNil) {
 			// allow a synthesis replacement of a sample
 			~sendSynth.(key, [
-					speed: speed,
-					start: start,
-					end: end,
-					pan: pan,
-					accelerate: accelerate,
-					amp: amp,
-					offset: offset,
-					cutGroup: cutgroup.abs, // ignore negatives here!
-					out: ~bus.index]
+				speed: speed,
+				start: start,
+				end: end,
+				pan: pan,
+				accelerate: accelerate,
+				amp: amp,
+				cps: cps,
+				offset: offset,
+				cutGroup: cutgroup.abs, // ignore negatives here!
+				out: ~bus.index]
 			)
 		} {
 			"no sample found for this name: %\n".postf(name);
@@ -295,7 +333,7 @@ Tdef(\x, {
 (
 Tdef(\x, {
 	loop {
-		~dirt.(1, 'CY:10', 0, 0.1.rand, 1.0.rand, 1 + 1.3.rand2, 2.rand2, accelerate:1, crush:1);
+		~dirt.(1, 'CY:10', 0, 0.1.rand, 1.0.rand, 1 + 1.3.rand2, 2.rand2, accelerate:0.2.rand2, crush:8);
 		(0.2 * [1, 2, 1/3]).choose.wait;
 	}
 }).play;
