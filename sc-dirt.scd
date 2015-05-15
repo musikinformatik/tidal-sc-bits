@@ -1,6 +1,6 @@
 (
 s.options.numBuffers = 1024 * 16;
-~numChannels = 2;
+~numChannels = 2; // adjust this to your channel setup
 
 s.tree = {
 	/*
@@ -39,7 +39,7 @@ folderPaths.do { |folderPath|
 // init sc-dirt
 (
 /*
-in order to avoid bookkeeping on the language side, we implement cutgroups like this.
+in order to avoid bookkeeping on the language side, we implement cutgroups as follows:
 The language initialises the synth with its sample id (some number that correlates with the sample name) and the cutgroup. Before we start the new synth, we send a /set message to all synths, and those that match the specifics will be released.
 */
 
@@ -100,6 +100,15 @@ SynthDef(\dirt_monitor, { |out, in|
 	ReplaceOut.ar(in, Silent.ar(~numChannels)) // clears bus signal for subsequent synths
 }).add;
 
+~sendSynth = { |instrument, args|
+	s.sendMsg(\s_new, instrument,
+				-1, // no id
+				1, // add action: addToTail
+				1, // send to group 1
+		*args // append all other args
+	)
+};
+
 
 ~dirt = {
 	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0,
@@ -107,30 +116,31 @@ SynthDef(\dirt_monitor, { |out, in|
 	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay, delaytime, delayfeedback,
 	crush, coarse, hcutoff, hresonance, bandqf, bandq, unit|
 
-	var amp, allbufs, bufnum, group;
+	var amp, allbufs, buffer, group;
 	var key, index, instrument = \dirt;
 	var sample;
 
 	#key, index = name.asString.split($:);
-	allbufs = ~buffers[key.asSymbol];
+	key = key.asSymbol;
+	allbufs = ~buffers[key];
 
 	if(allbufs.notNil) {
 		index = (index ? 0).asInteger;
-		bufnum = allbufs.wrapAt(index);
+		buffer = allbufs.wrapAt(index);
 		amp = pow(gain / 2, 4);
 		speed = speed * cps;
 		sample = name.identityHash;
 
-		s.bind {
+		s.bind { // use this to build a bundle
+
 			if(cutgroup != 0) {
 				// set group 1, in which all synths are living
 				s.sendMsg(\n_set, 1, \gateCutGroup, cutgroup, \gateSample, sample);
 			};
 
-			Synth(instrument,
-				[
+			~sendSynth.(instrument, [
 					speed: speed,
-					bufnum: bufnum,
+					bufnum: buffer.bufnum,
 					start: start,
 					end: end,
 					pan: pan,
@@ -139,46 +149,56 @@ SynthDef(\dirt_monitor, { |out, in|
 					offset: offset,
 					cutGroup: cutgroup.abs, // ignore negatives here!
 					sample: sample,
-					out: ~bus],
-				group,
-				\addToTail
+					out: ~bus.index]
 			);
 
 			if(vowel.notNil) {
 
-				Synth(\dirt_vowel,
+				~sendSynth.(\dirt_vowel,
 					[
-						out: ~bus,
+						out: ~bus.index,
 						cutoff: cutoff,
-						resonance: resonance],
-					group,
-					\addToTail
+						resonance: resonance
+					]
 				);
 
 			};
 
 			if(crush.notNil) {
-				Synth(\dirt_crush,
+				~sendSynth.(\dirt_crush,
 					[
-						out: ~bus
-					],
-					group,
-					\addToTail
+						out: ~bus.index
+					]
 				);
 			};
 
-
-			Synth(\dirt_monitor,
-				[in: ~bus, out: 0],
-				group,
-				\addToTail
+			~sendSynth.(\dirt_monitor,
+				[
+					in: ~bus.index,  // read from private
+					out: 0     // write to public
+				]
 			);
 
 
 		};
 
 	} {
-		"no sample found for this name: %\n".postf(name);
+		if(SynthDescLib.at(key).notNil) {
+			// allow a synthesis replacement of a sample
+			~sendSynth.(key, [
+					speed: speed,
+					start: start,
+					end: end,
+					pan: pan,
+					accelerate: accelerate,
+					amp: amp,
+					offset: offset,
+					cutGroup: cutgroup.abs, // ignore negatives here!
+					out: ~bus.index]
+			)
+		} {
+			"no sample found for this name: %\n".postf(name);
+		}
 	}
 };
 
@@ -223,9 +243,23 @@ Tdef(\x, {
 ~dirt.(1, 'CY:10', speed: 0.02, cutgroup: 8); // should free all others
 
 
+// test replacement:
+(
+SynthDef(\imp, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp = 0.1, offset, doneAction=2|
+	var env, sound, dur;
+	dur = (end - start) / speed;
+	env = EnvGen.ar(Env.linen(0, dur, 0.001, amp, -4), doneAction:doneAction);
+	sound = Blip.ar(32 * (start + 1) * (speed + Sweep.kr(1, accelerate)), 100);
+	env = env * ~gateCutGroup.value; // this synth can be freed by cutgroup mechanism
+	OffsetOut.ar(out,
+		PanAz.ar(~numChannels, sound, pan, env)
+	);
+}).add;
+)
 
-
-
+~dirt.(1, 'imp', speed: 1, start: 0, end: 1);
+~dirt.(1, 'imp', speed: 1, start: 0.5, end: 1);
+~dirt.(1, 'imp', speed: 1, start: 0, end: 1, accelerate: 3);
 
 
 
