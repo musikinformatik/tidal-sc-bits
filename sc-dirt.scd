@@ -221,7 +221,6 @@ Functions for sending synths to the server.
 		index = (index ? 0).asInteger;
 		buffer = allbufs.wrapAt(index);
 		amp = pow(gain / 2, 4);
-		speed = speed * cps;
 		sample = name.identityHash;
 		unit = #[\r, \c, \s].indexOf(unit) ? 0;
 
@@ -384,12 +383,16 @@ Tdef(\x, {
 
 
 // test replacement:
+
+// todo: need to factor out unit calculations to be able to add them here.
+// alternatively, we do the calculations on the language side, but this will make it necessary that we know all teh buffer data (this wasn't working when testing, so this is on the safe side)
+
 (
-SynthDef(\imp, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp = 0.1, offset, doneAction=2|
+SynthDef(\imp, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp = 0.1, offset|
 	var env, sound, dur;
 	dur = (end - start) / speed;
-	env = EnvGen.ar(Env.linen(0, dur, 0.001, amp, -4), doneAction:doneAction);
-	sound = Blip.ar(32 * (start + 1) * (speed + Sweep.kr(1, accelerate)), 100);
+	env = EnvGen.ar(Env.linen(0, dur, 0.001, amp * 10, -4), doneAction:2);
+	sound = Blip.ar(32 * (start + 1) * (speed + Sweep.kr(1, accelerate)), 300);
 	env = env * ~gateCutGroup.value; // this synth can be freed by cutgroup mechanism
 	OffsetOut.ar(out,
 		PanAz.ar(~numChannels, sound, pan, env)
