@@ -202,7 +202,7 @@ Functions for sending synths to the server.
 
 
 ~dirt = {
-	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0, velocity,
+	|scheduleTime, cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0, velocity,
 	vowel, cutoff = 300, resonance = 0.5,
 	accelerate = 0, shape, krio, gain = 2, cutgroup = 0,
 	delay = 0, delaytime = 0, delayfeedback = 0,
@@ -212,7 +212,7 @@ Functions for sending synths to the server.
 	bandqf = 0, bandq = 0,
 	unit = \r|
 
-	var amp, allbufs, buffer, group;
+	var amp, allbufs, buffer, group, latency;
 	var instrument, key, index, sample;
 
 	#key, index = name.asString.split($:);
@@ -233,7 +233,15 @@ Functions for sending synths to the server.
 		unit = #[\r, \c, \s].indexOf(unit) ? 0;
 		amp = pow(gain / 2, 4);
 
-		s.bind { // use this to build a bundle
+		if(scheduleTime.notNil) {
+			latency = scheduleTime - Main.elapsedTime;
+			if(latency > 2) {
+				"too long delay. Networks clocks may not be in sync".warn;
+				latency = 0.2;
+			}
+		};
+
+		s.makeBundle(latency, { // use this to build a bundle
 
 			if(cutgroup != 0) {
 				// set group 1, in which all synths are living
@@ -310,7 +318,7 @@ Functions for sending synths to the server.
 			);
 
 
-		};
+		});
 
 	} {
 		"no sample or instrument found for this name: %\n".postf(name);
@@ -319,8 +327,7 @@ Functions for sending synths to the server.
 
 
 OSCdef(\dirt, { |msg, time|
-	msg.postln;
-	~dirt.(*msg[1..]);
+	~dirt.(time, *msg[1..]);
 }, '/play');
 )
 
@@ -418,3 +425,9 @@ n = NetAddr("127.0.0.1", 57120);
 n.sendMsg(\play, 1, 'CY:10');
 n.sendMsg(\play, 1, 'CY');
 n.sendMsg(\play, 1, \imp);
+
+(
+n.sendBundle(1.2, [\play, 1, 'CY']);
+n.sendBundle(1.2, [\play, 1, 'CY']);
+)
+
