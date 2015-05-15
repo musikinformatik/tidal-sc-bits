@@ -1,4 +1,12 @@
 (
+
+SynthDef(\dirt_delay, { |out, delayBus, delaytime, delayfeedback|
+	var signal = In.ar(delayBus, ~numChannels);
+	signal = SwitchDelay.ar(signal, 1, 1, delaytime, delayfeedback); // try this from sc3-plugins
+	Out.ar(out, signal);
+}).add;
+
+
 s.options.numBuffers = 1024 * 16;
 ~numChannels = 2; // adjust this to your channel setup
 
@@ -7,6 +15,9 @@ s.tree = {
 	we use one private bus, so we can use the public one for mixing everything together (see the "dirt_monitor" synth def)
 	*/
 	~bus = Bus.audio(s, ~numChannels);
+	~delayBus =  Bus.audio(s, ~numChannels);
+	~delaySynthID = s.nextNodeID;
+	s.sendMsg(\s_new, \dirt_delay, ~delaySynthID, 3, 1, \delayBus, ~delayBus.index, \out, 0); // add delay after group 1
 };
 s.reboot;
 )
@@ -44,16 +55,18 @@ The language initialises the synth with its sample id (some number that correlat
 */
 
 ~gateCutGroup = {
+	// this is necessary because the message "==" tests for objects, not for signals
 	var same = { |a, b| BinaryOpUGen('==', a, b) };
 	var sameCutGroup = same.(\cutGroup.kr(0), abs(\gateCutGroup.kr(0)));
+	var sameSample = same.(\sample.kr(0), \gateSample.kr(0));
 	var which = \gateCutGroup.kr(0).sign; // -1, 0, 1
 	var free = Select.kr(which + 1, // 0, 1, 2
 		[
-			same.(\sample.kr(0), \gateSample.kr(0)),
+			sameSample,
 			0.0, // default cut group 0 doesn't ever cut
 			1.0
 		]
-	) * sameCutGroup; // same group is mandatory
+	) * sameCutGroup; // same cut group is mandatory
 
 	EnvGen.kr(Env.asr(0, 1, 0.01), 1 - free, doneAction:2);
 };
@@ -99,11 +112,19 @@ SynthDef(\dirt_crush, { |out|
 
 // the monitor does the mixing and zeroing of the busses
 
-SynthDef(\dirt_monitor, { |out, in|
+SynthDef(\dirt_monitor, { |out, in, delayBus, delay = 0|
 	var signal = In.ar(in, ~numChannels);
 	DetectSilence.ar(signal, doneAction:2);
 	Out.ar(out, signal);
+	Out.ar(delayBus, signal * delay);
 	ReplaceOut.ar(in, Silent.ar(~numChannels)) // clears bus signal for subsequent synths
+}).add;
+
+
+SynthDef(\dirt_delay, { |out, delayBus, delaytime, delayfeedback|
+	var signal = In.ar(delayBus, ~numChannels);
+	signal = SwitchDelay.ar(signal, 1, 1, delaytime, delayfeedback); // try this from sc3-plugins
+	Out.ar(out, signal);
 }).add;
 
 /*
@@ -123,7 +144,7 @@ Functions for sending synths to the server.
 ~dirt = {
 	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0,
 	velocity, vowel, cutoff, resonance,
-	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay, delaytime, delayfeedback,
+	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay = 0, delaytime = 0, delayfeedback = 0,
 	crush, coarse, hcutoff, hresonance, bandqf, bandq, unit|
 
 	var amp, allbufs, buffer, group;
@@ -146,6 +167,11 @@ Functions for sending synths to the server.
 			if(cutgroup != 0) {
 				// set group 1, in which all synths are living
 				s.sendMsg(\n_set, 1, \gateCutGroup, cutgroup, \gateSample, sample);
+			};
+
+			// set global delay synth parameters
+			if(delaytime != 0 or: { delayfeedback != 0 }) {
+				s.sendMsg(\n_set, ~delaySynthID, \delaytime, delaytime, \delayfeedback, delayfeedback);
 			};
 
 			~sendSynth.(instrument, [
@@ -185,7 +211,9 @@ Functions for sending synths to the server.
 			~sendSynth.(\dirt_monitor,
 				[
 					in: ~bus.index,  // read from private
-					out: 0     // write to public
+					out: 0,     // write to public,
+					delayBus: ~delayBus.index,
+					delay: delay
 				]
 			);
 
@@ -251,6 +279,14 @@ Tdef(\x, {
 
 //  with positive integers, stop samples playing that are in the same cutgroup.
 ~dirt.(1, 'CY:10', speed: 0.02, cutgroup: 8); // should free all others
+
+
+
+// test delay:
+
+~dirt.(1, 'CY:10', speed: 1, delaytime: 0.8, delay: 1);
+~dirt.(1, 'CY:10', speed: 1, delaytime: 0.8, delay: 0);
+~dirt.(1, 'CY:10', speed: 1, delaytime: 0.2, delay: 1);
 
 
 // test replacement:
