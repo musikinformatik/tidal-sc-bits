@@ -218,7 +218,7 @@ Functions for sending synths to the server.
 	#key, index = name.asString.split($:);
 	key = key.asSymbol;
 	allbufs = ~buffers[key];
-
+	index = (index ? 0).asInteger;
 
 	if(allbufs.notNil) {
 		instrument = \dirt;
@@ -230,7 +230,6 @@ Functions for sending synths to the server.
 
 	if(allbufs.notNil or: { SynthDescLib.at(key).notNil }) {
 
-		index = (index ? 0).asInteger;
 		unit = #[\r, \c, \s].indexOf(unit) ? 0;
 		amp = pow(gain / 2, 4);
 
@@ -319,8 +318,9 @@ Functions for sending synths to the server.
 };
 
 
-OSCdef(\dirt, { |msg|
-	~dirt.(msg[1..]);
+OSCdef(\dirt, { |msg, time|
+	msg.postln;
+	~dirt.(*msg[1..]);
 }, '/play');
 )
 
@@ -410,3 +410,11 @@ Tdef(\x, {
 	}
 }).play;
 )
+
+
+// network test
+n = NetAddr("127.0.0.1", 57120);
+
+n.sendMsg(\play, 1, 'CY:10');
+n.sendMsg(\play, 1, 'CY');
+n.sendMsg(\play, 1, \imp);
