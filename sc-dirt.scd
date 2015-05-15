@@ -75,7 +75,9 @@ SynthDef(\dirt, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp 
 The following effect synths are freed when input is silent for longer than 0.1 sec. This makes it unnecessary to keep track of any synths. But this may cause problems with samples that contain silence. One way to solve this involves bookkeeping of synths on the language side (haskell or sclang). For now, we use the simplest possible way.
 */
 
-// this is just a placeholder, not sure how it is best translated
+// these are just placeholders, not sure how they are best translated
+
+// we need to select formant bands for the vowels in sclang (at least this would be the most efficient)
 SynthDef(\dirt_vowel, { |out, cutoff, resonance|
 	var signal = In.ar(out, ~numChannels);
 	var freq = \freq.kr(440);
@@ -85,7 +87,9 @@ SynthDef(\dirt_vowel, { |out, cutoff, resonance|
 	ReplaceOut.ar(out, signal)
 }).add;
 
-SynthDef(\dirt_crush, { |out, cutoff, resonance|
+// would be nice to have some parameters in such cases
+// randmomness could be added
+SynthDef(\dirt_crush, { |out|
 	var signal = In.ar(out, ~numChannels);
 	var bitsize = 4;
 	signal = signal.round(0.5 ** bitsize);
@@ -93,12 +97,18 @@ SynthDef(\dirt_crush, { |out, cutoff, resonance|
 	ReplaceOut.ar(out, signal)
 }).add;
 
+// the monitor does the mixing and zeroing of the busses
+
 SynthDef(\dirt_monitor, { |out, in|
 	var signal = In.ar(in, ~numChannels);
 	DetectSilence.ar(signal, doneAction:2);
 	Out.ar(out, signal);
 	ReplaceOut.ar(in, Silent.ar(~numChannels)) // clears bus signal for subsequent synths
 }).add;
+
+/*
+Functions for sending synths to the server.
+*/
 
 ~sendSynth = { |instrument, args|
 	s.sendMsg(\s_new, instrument,
