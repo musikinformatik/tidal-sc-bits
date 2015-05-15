@@ -1,5 +1,9 @@
 (
 
+s.options.numBuffers = 1024 * 16;
+~numChannels = 2; // adjust this to your channel setup
+
+// we need this here, because it is a global effect (repeated below under effects)
 SynthDef(\dirt_delay, { |out, delayBus, delaytime, delayfeedback|
 	var signal = In.ar(delayBus, ~numChannels);
 	signal = SwitchDelay.ar(signal, 1, 1, delaytime, delayfeedback); // try this from sc3-plugins
@@ -7,8 +11,6 @@ SynthDef(\dirt_delay, { |out, delayBus, delaytime, delayfeedback|
 }).add;
 
 
-s.options.numBuffers = 1024 * 16;
-~numChannels = 2; // adjust this to your channel setup
 
 s.tree = {
 	/*
@@ -100,12 +102,25 @@ SynthDef(\dirt_vowel, { |out, cutoff, resonance|
 	ReplaceOut.ar(out, signal)
 }).add;
 
-// would be nice to have some parameters in such cases
-// randmomness could be added
-SynthDef(\dirt_crush, { |out|
+// would be nice to have some more parameters in some cases
+
+SynthDef(\dirt_crush, { |out, crush = 4|
 	var signal = In.ar(out, ~numChannels);
-	var bitsize = 4;
-	signal = signal.round(0.5 ** bitsize);
+	signal = signal.round(0.5 ** crush);
+	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
+	ReplaceOut.ar(out, signal)
+}).add;
+
+SynthDef(\dirt_hpf, { |out, hcutoff = 440, hresonance = 0|
+	var signal = In.ar(out, ~numChannels);
+	signal = RHPF.ar(signal, hcutoff, hresonance.linexp(0, 1, 1, 0.001));
+	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
+	ReplaceOut.ar(out, signal)
+}).add;
+
+SynthDef(\dirt_bpf, { |out, bandqf = 440, bandq = 10|
+	var signal = In.ar(out, ~numChannels);
+	signal = BPF.ar(signal, bandqf, 1/bandq) * max(bandq, 1.0);
 	DetectSilence.ar(LeakDC.ar(signal), doneAction:2);
 	ReplaceOut.ar(out, signal)
 }).add;
@@ -145,7 +160,7 @@ Functions for sending synths to the server.
 	|cps = 1, name, offset = 0, start = 0, end = 1, speed = 1, pan = 0,
 	velocity, vowel, cutoff, resonance,
 	accelerate = 0, shape, krio, gain = 2, cutgroup = 0, delay = 0, delaytime = 0, delayfeedback = 0,
-	crush, coarse, hcutoff, hresonance, bandqf, bandq, unit|
+	crush = 0, coarse = 0, hcutoff = 0, hresonance = 0, bandqf = 0, bandq = 0, unit|
 
 	var amp, allbufs, buffer, group;
 	var key, index, instrument = \dirt;
@@ -200,9 +215,28 @@ Functions for sending synths to the server.
 
 			};
 
-			if(crush.notNil) {
+			if(crush != 0) {
 				~sendSynth.(\dirt_crush,
 					[
+						crush: crush,
+						out: ~bus.index
+					]
+				);
+			};
+			if(hcutoff != 0) {
+				~sendSynth.(\dirt_hpf,
+					[
+						hcutoff: hcutoff,
+						hresonance: hresonance,
+						out: ~bus.index
+					]
+				);
+			};
+			if(bandqf != 0) {
+				~sendSynth.(\dirt_bpf,
+					[
+						bandqf: bandqf,
+						bandq: bandq,
 						out: ~bus.index
 					]
 				);
@@ -280,6 +314,13 @@ Tdef(\x, {
 //  with positive integers, stop samples playing that are in the same cutgroup.
 ~dirt.(1, 'CY:10', speed: 0.02, cutgroup: 8); // should free all others
 
+
+// test effects:
+~dirt.(1, 'CY:10', speed: 0.1, crush: 4);
+~dirt.(1, 'CY:10', speed: 1, hcutoff: 1000, hresonance: 20);
+~dirt.(1, 'CY:10', speed: 1, hcutoff: 3000, hresonance: 10);
+~dirt.(1, 'CY:10', speed: 1, bandqf: 3000, bandq: 100);
+~dirt.(1, 'CY:10', speed: 1, bandqf: 3000, bandq: 100, crush: 4);
 
 
 // test delay:
