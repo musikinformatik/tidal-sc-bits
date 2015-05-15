@@ -86,6 +86,9 @@ SynthDef(\dirt, { |out, bufnum, start=0, end=1, pan, amp = 0.1,
 
 	// need to check these carefully
 	// todo: account for accelerate
+	// maybe implement them on the language side
+	// but we need to make sure that the buffer data is there.
+
 	rate = Select.kr(unit, [
 		speed,
 		cps * speed / sampleDur,
@@ -210,19 +213,26 @@ Functions for sending synths to the server.
 	unit = \r|
 
 	var amp, allbufs, buffer, group;
-	var key, index, instrument = \dirt;
-	var sample;
+	var instrument, key, index, sample;
 
 	#key, index = name.asString.split($:);
 	key = key.asSymbol;
 	allbufs = ~buffers[key];
 
+
 	if(allbufs.notNil) {
-		index = (index ? 0).asInteger;
-		buffer = allbufs.wrapAt(index);
-		amp = pow(gain / 2, 4);
+		instrument = \dirt;
+		buffer = allbufs.wrapAt(index).bufnum;
 		sample = name.identityHash;
+	} {
+		instrument = key;
+	};
+
+	if(allbufs.notNil or: { SynthDescLib.at(key).notNil }) {
+
+		index = (index ? 0).asInteger;
 		unit = #[\r, \c, \s].indexOf(unit) ? 0;
+		amp = pow(gain / 2, 4);
 
 		s.bind { // use this to build a bundle
 
@@ -238,7 +248,7 @@ Functions for sending synths to the server.
 
 			~sendSynth.(instrument, [
 				speed: speed,
-				bufnum: buffer.bufnum,
+				bufnum: buffer,
 				start: start,
 				end: end,
 				pan: pan,
@@ -304,23 +314,7 @@ Functions for sending synths to the server.
 		};
 
 	} {
-		if(SynthDescLib.at(key).notNil) {
-			// allow a synthesis replacement of a sample
-			~sendSynth.(key, [
-				speed: speed,
-				start: start,
-				end: end,
-				pan: pan,
-				accelerate: accelerate,
-				amp: amp,
-				cps: cps,
-				offset: offset,
-				cutGroup: cutgroup.abs, // ignore negatives here!
-				out: ~bus.index]
-			)
-		} {
-			"no sample found for this name: %\n".postf(name);
-		}
+		"no sample or instrument found for this name: %\n".postf(name);
 	}
 };
 
@@ -387,12 +381,15 @@ Tdef(\x, {
 // todo: need to factor out unit calculations to be able to add them here.
 // alternatively, we do the calculations on the language side, but this will make it necessary that we know all teh buffer data (this wasn't working when testing, so this is on the safe side)
 
+// you can livecode this while running tidal.
 (
-SynthDef(\imp, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp = 0.1, offset|
-	var env, sound, dur;
+SynthDef(\imp, { |out, speed = 1, start=0, end=1, pan, accelerate, amp = 0.1, offset|
+	var env, sound, dur, rate, phase;
 	dur = (end - start) / speed;
-	env = EnvGen.ar(Env.linen(0, dur, 0.001, amp * 10, -4), doneAction:2);
-	sound = Blip.ar(32 * (start + 1) * (speed + Sweep.kr(1, accelerate)), 300);
+	env = EnvGen.ar(Env.linen(0, 0.2, 0.8, amp, -4), timeScale:dur, doneAction:2);
+	phase = Line.ar(start, end, dur);
+	rate = (start + 1) * (speed + Sweep.kr(1, accelerate));
+	sound = Blip.ar(rate.linexp(0, 1, 15 * [1, 2, 5], 200), 200 * phase).sum;
 	env = env * ~gateCutGroup.value; // this synth can be freed by cutgroup mechanism
 	OffsetOut.ar(out,
 		PanAz.ar(~numChannels, sound, pan, env)
@@ -400,9 +397,16 @@ SynthDef(\imp, { |out, speed = 1, bufnum, start=0, end=1, pan, accelerate, amp =
 }).add;
 )
 
+
 ~dirt.(1, 'imp', speed: 1, start: 0, end: 1);
 ~dirt.(1, 'imp', speed: 1, start: 0.5, end: 1);
-~dirt.(1, 'imp', speed: 1, start: 0, end: 1, accelerate: 3);
+~dirt.(1, 'imp', speed: 0.1, start: 0, end: 1, accelerate: 3);
 
-
-
+(
+Tdef(\x, {
+	loop {
+		~dirt.(1, 'imp', 0, speed:rrand(1.0, 2.0), start:0, end: 2.0.rand, accelerate:1, hcutoff: 4000.0.rand, hresonance: 0.5.rand);
+		0.5.wait;
+	}
+}).play;
+)
